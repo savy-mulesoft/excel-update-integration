@@ -1,0 +1,57 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Mule Application",
+            "type": "java",
+            "request": "launch",
+            "mainClass": "org.mule.runtime.module.launcher.MuleContainer",
+            "projectName": "excel-update-integration",
+            "args": [
+                "-M-Dmule.forceConsoleLog=true",
+                "-M-Dmule.testingMode=true"
+            ],
+            "vmArgs": [
+                "-Dmule.home=${workspaceFolder}",
+                "-Dmule.base=${workspaceFolder}",
+                "-Dmule.verbose.exceptions=true",
+                "-Dfile.encoding=UTF-8"
+            ],
+            "env": {
+                "MULE_HOME": "${workspaceFolder}",
+                "MULE_BASE": "${workspaceFolder}"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "stopOnEntry": false,
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "mule:compile"
+        },
+        {
+            "name": "Run Mule Application (Maven)",
+            "type": "java",
+            "request": "launch",
+            "mainClass": "org.mule.MuleServer",
+            "projectName": "excel-update-integration",
+            "args": [],
+            "vmArgs": [
+                "-Dmule.home=${workspaceFolder}",
+                "-Dmule.base=${workspaceFolder}",
+                "-Dfile.encoding=UTF-8",
+                "-Dmule.forceConsoleLog=true"
+            ],
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "mule:run"
+        },
+        {
+            "name": "Attach to Mule Application",
+            "type": "java",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005,
+            "timeout": 30000
+        }
+    ]
+}
