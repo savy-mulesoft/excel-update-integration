@@ -52,6 +52,22 @@
 			<version>1.5.1</version>
 			<classifier>mule-plugin</classifier>
 		</dependency>
+		<!-- Apache POI for Excel manipulation -->
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi</artifactId>
+			<version>5.2.4</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>5.2.4</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-scratchpad</artifactId>
+			<version>5.2.4</version>
+		</dependency>
 	</dependencies>
 
 	<repositories>

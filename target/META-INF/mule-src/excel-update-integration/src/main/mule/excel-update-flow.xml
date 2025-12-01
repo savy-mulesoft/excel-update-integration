@@ -59,13 +59,22 @@ else
         
         <logger message="Template file copied to: #['${excel.output.directory}' ++ vars.uniqueFileName]" level="INFO" doc:name="Log File Copy" doc:id="log-file-copy"/>
         
-        <!-- Log the cell updates that would be performed -->
-        <foreach doc:name="For Each Cell Update" doc:id="foreach-cell-update" collection="#[vars.originalPayload]">
-            <logger message="Would update cell #[payload.key] with value #[payload.value] in file #[vars.uniqueFileName]" level="INFO" doc:name="Log Cell Update" doc:id="log-cell-update"/>
-        </foreach>
+        <!-- Convert payload to Map for Java method -->
+        <ee:transform doc:name="Convert to Map" doc:id="convert-to-map">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.originalPayload reduce (item, acc = {}) -> acc ++ { (item.key): item.value }]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
         
-        <!-- Note: Actual Excel cell updates would require a specialized Excel library or connector -->
-        <logger message="Excel file copied successfully. Cell updates logged for: #[vars.uniqueFileName]" level="INFO" doc:name="Log File Processing" doc:id="log-file-processing"/>
+        <!-- Call Java method to update Excel cells -->
+        <logger message="Calling ExcelUpdater.updateExcelCells for file: #['${excel.output.directory}' ++ vars.uniqueFileName]" level="INFO" doc:name="Log Java Call" doc:id="log-java-call"/>
+        
+        <set-variable variableName="updatedCellsCount" value="#[java!com::mulesoft::excel::ExcelUpdater::updateExcelCells('${excel.output.directory}' ++ vars.uniqueFileName, payload)]" doc:name="Update Excel Cells" doc:id="update-excel-cells"/>
+        
+        <logger message="Successfully updated #[vars.updatedCellsCount] cells in Excel file: #[vars.uniqueFileName]" level="INFO" doc:name="Log Success Update" doc:id="log-success-update"/>
         
         <!-- Prepare success response -->
         <ee:transform doc:name="Prepare Response" doc:id="prepare-response">
