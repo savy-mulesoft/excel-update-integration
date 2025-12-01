@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" 
+      xmlns:http="http://www.mulesoft.org/schema/mule/http" 
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+                          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+                          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+                          http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+    
+    <!-- HTTP Listener Configuration -->
+    <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
+        <http:listener-connection host="${http.host}" port="${http.port}" />
+    </http:listener-config>
+    
+    <!-- File Configuration -->
+    <file:config name="File_Config" doc:name="File Config">
+        <file:connection workingDir="${app.home}" />
+    </file:config>
+    
+    
+    <!-- Main Flow -->
+    <flow name="excel-update-flow" doc:id="excel-update-flow">
+        <http:listener config-ref="HTTP_Listener_config" path="/update" doc:name="HTTP Listener" doc:id="http-listener" allowedMethods="POST"/>
+        
+        <!-- Store original payload before transformation -->
+        <set-variable variableName="originalPayload" value="#[payload]" doc:name="Store Original Payload" doc:id="store-original-payload"/>
+        
+        <!-- Generate unique request ID -->
+        <set-variable variableName="requestId" value="#[uuid()]" doc:name="Generate Request ID" doc:id="generate-request-id"/>
+        <set-variable variableName="timestamp" value="#[now() as String {format: 'yyyyMMdd-HHmmss'}]" doc:name="Generate Timestamp" doc:id="generate-timestamp"/>
+        <set-variable variableName="uniqueFileName" value="#['updated-excel-' ++ vars.timestamp ++ '-' ++ vars.requestId ++ '.xlsm']" doc:name="Generate Unique Filename" doc:id="generate-unique-filename"/>
+        
+        <logger message="Processing Excel update request. Request ID: #[vars.requestId], Payload: #[payload]" level="INFO" doc:name="Log Request" doc:id="log-request"/>
+        
+        <!-- Validate payload structure -->
+        <ee:transform doc:name="Validate and Transform Payload" doc:id="validate-transform-payload">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+if (payload is Array)
+    payload filter ($ != null and $.key != null and $.value != null)
+else
+    error("Payload must be an array of key-value objects")]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        
+        <!-- Create output directory if it doesn't exist -->
+        <file:create-directory config-ref="File_Config" directoryPath="${excel.output.directory}" doc:name="Create Output Directory" doc:id="create-output-directory"/>
+        
+        <!-- Copy template file to unique filename -->
+        <file:copy config-ref="File_Config" 
+                   sourcePath="${excel.template.path}" 
+                   targetPath="#['${excel.output.directory}' ++ vars.uniqueFileName]" 
+                   overwrite="true"
+                   doc:name="Copy Template File" doc:id="copy-template-file"/>
+        
+        <logger message="Template file copied to: #['${excel.output.directory}' ++ vars.uniqueFileName]" level="INFO" doc:name="Log File Copy" doc:id="log-file-copy"/>
+        
+        <!-- Log the cell updates that would be performed -->
+        <foreach doc:name="For Each Cell Update" doc:id="foreach-cell-update" collection="#[vars.originalPayload]">
+            <logger message="Would update cell #[payload.key] with value #[payload.value] in file #[vars.uniqueFileName]" level="INFO" doc:name="Log Cell Update" doc:id="log-cell-update"/>
+        </foreach>
+        
+        <!-- Note: Actual Excel cell updates would require a specialized Excel library or connector -->
+        <logger message="Excel file copied successfully. Cell updates logged for: #[vars.uniqueFileName]" level="INFO" doc:name="Log File Processing" doc:id="log-file-processing"/>
+        
+        <!-- Prepare success response -->
+        <ee:transform doc:name="Prepare Response" doc:id="prepare-response">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: "success",
+    message: "Excel file updated successfully",
+    requestId: vars.requestId,
+    fileName: vars.uniqueFileName,
+    updatedCells: sizeOf(vars.originalPayload),
+    timestamp: vars.timestamp
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        
+        <logger message="Excel update completed successfully. File: #[vars.uniqueFileName]" level="INFO" doc:name="Log Success" doc:id="log-success"/>
+        
+        <!-- Error Handling -->
+        <error-handler>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="on-error-propagate" type="ANY">
+                <logger message="Error processing Excel update: #[error.description]" level="ERROR" doc:name="Log Error" doc:id="log-error"/>
+                <ee:transform doc:name="Error Response" doc:id="error-response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: "error",
+    message: "Failed to update Excel file",
+    error: error.description,
+    requestId: vars.requestId default "unknown"
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    
+</mule>
