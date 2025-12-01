@@ -2,22 +2,19 @@
 <mule xmlns="http://www.mulesoft.org/schema/mule/core" 
       xmlns:http="http://www.mulesoft.org/schema/mule/http" 
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
-      xmlns:file="http://www.mulesoft.org/schema/mule/file"
-      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
                           http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-                          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
-                          http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+                          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    
+    <!-- Configuration Properties -->
+    <configuration-properties file="application.properties" doc:name="Configuration properties" doc:id="configuration-properties" />
     
     <!-- HTTP Listener Configuration -->
     <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config">
         <http:listener-connection host="${http.host}" port="${http.port}" />
     </http:listener-config>
-    
-    <!-- File Configuration -->
-    <file:config name="File_Config" doc:name="File Config">
-        <file:connection workingDir="${app.home}" />
-    </file:config>
     
     
     <!-- Main Flow -->
@@ -47,18 +44,6 @@ else
             </ee:message>
         </ee:transform>
         
-        <!-- Create output directory if it doesn't exist -->
-        <file:create-directory config-ref="File_Config" directoryPath="${excel.output.directory}" doc:name="Create Output Directory" doc:id="create-output-directory"/>
-        
-        <!-- Copy template file to unique filename -->
-        <file:copy config-ref="File_Config" 
-                   sourcePath="${excel.template.path}" 
-                   targetPath="#['${excel.output.directory}' ++ vars.uniqueFileName]" 
-                   overwrite="true"
-                   doc:name="Copy Template File" doc:id="copy-template-file"/>
-        
-        <logger message="Template file copied to: #['${excel.output.directory}' ++ vars.uniqueFileName]" level="INFO" doc:name="Log File Copy" doc:id="log-file-copy"/>
-        
         <!-- Convert payload to Map for Java method -->
         <ee:transform doc:name="Convert to Map" doc:id="convert-to-map">
             <ee:message>
@@ -69,10 +54,10 @@ vars.originalPayload reduce (item, acc = {}) -> acc ++ { (item.key): item.value 
             </ee:message>
         </ee:transform>
         
-        <!-- Call Java method to update Excel cells -->
-        <logger message="Calling ExcelUpdater.updateExcelCells for file: #['${excel.output.directory}' ++ vars.uniqueFileName]" level="INFO" doc:name="Log Java Call" doc:id="log-java-call"/>
+        <!-- Call Java method to update Excel cells (now handles file operations internally) -->
+        <logger message="Calling ExcelUpdater.updateExcelCells with template: ${excel.template.path} and output: #['${excel.output.directory}' ++ vars.uniqueFileName]" level="INFO" doc:name="Log Java Call" doc:id="log-java-call"/>
         
-        <set-variable variableName="updatedCellsCount" value="#[java!com::mulesoft::excel::ExcelUpdater::updateExcelCells('${excel.output.directory}' ++ vars.uniqueFileName, payload)]" doc:name="Update Excel Cells" doc:id="update-excel-cells"/>
+        <set-variable variableName="updatedCellsCount" value="#[java!com::mulesoft::excel::ExcelUpdater::updateExcelCells('${excel.template.path}', '${excel.output.directory}' ++ vars.uniqueFileName, payload)]" doc:name="Update Excel Cells" doc:id="update-excel-cells"/>
         
         <logger message="Successfully updated #[vars.updatedCellsCount] cells in Excel file: #[vars.uniqueFileName]" level="INFO" doc:name="Log Success Update" doc:id="log-success-update"/>
         
