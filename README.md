@@ -1,136 +1,154 @@
-# Excel Update Integration
+# RBC Excel API Documentation
 
-A MuleSoft integration flow that listens to HTTP POST requests on the `/update/` endpoint and updates Excel files with key-value pairs from the request payload.
+> ⚠️ **Disclaimer**
+>
+> This API and the accompanying documentation are **not production-grade**.  
+> They are provided **solely for development guidance and proof-of-concept (PoC) purposes**.
+>
+> Security, scalability, performance hardening, error handling, and operational controls
+> have **not** been fully implemented and **must be addressed before any production use**.
 
-## Features
 
-- **HTTP Listener**: Accepts POST requests on `/update/` endpoint
-- **Excel File Processing**: Creates unique copies of template Excel files
-- **Dynamic Cell Updates**: Updates Excel cells based on key-value pairs in the payload
-- **Error Handling**: Comprehensive error handling with detailed logging
-- **Unique File Generation**: Creates timestamped files with request IDs for traceability
+## Overview
 
-## Project Structure
+The RBC Excel API is a RESTful service designed to facilitate the modification of Excel files (`.xlsm` format). It allows users to update specific cells in an Excel file with new data, either by using a server-side template or by uploading their own Excel file.
 
+### Key Features
+
+* **Cell Updates:** Update specific cells in an Excel file using JSON payloads.
+* **Flexible Output:** Save the updated file on the server or download it directly as a response.
+* **Custom Uploads:** Support for uploading custom Excel files for modification.
+* **Input Formats:** Supports JSON and multipart form data.
+
+---
+
+## Environments & Base URLs
+
+| Environment | URL |
+|:------------|:----|
+| **Development** | `https://rbc-excel-proxy-app-fomag7.5sc6y6-1.usa-e2.cloudhub.io` |
+| **Local** | `http://localhost:8081` |
+
+---
+
+## Quick Start
+
+To test the API immediately using the development environment, run the following cURL command to update a file and download the result:
+
+```bash
+curl --location 'https://rbc-excel-proxy-app-fomag7.5sc6y6-1.usa-e2.cloudhub.io/update-download' \
+--header 'Content-Type: application/json' \
+--data '[
+    {
+        "key": "A1",
+        "value": "Test Value"
+    },
+    {
+        "key": "B2",
+        "value": 123
+    }
+]' --output updated_file.xlsm
 ```
-excel-update-integration/
-├── pom.xml                                    # Maven configuration
-├── mule-artifact.json                         # Mule artifact configuration
-├── src/main/
-│   ├── mule/
-│   │   └── excel-update-flow.xml             # Main flow implementation
-│   └── resources/
-│       ├── application.properties            # Configuration properties
-│       ├── template.xlsm                     # Template Excel file
-│       └── output/                           # Directory for updated files
-└── README.md                                 # This file
-```
 
-## API Usage
+---
 
-### Endpoint
-```
-POST http://localhost:8081/update
-```
+## Endpoint Reference
 
-### Request Payload
-Send an array of key-value objects where:
-- `key`: Excel cell address (e.g., "A1", "B2", "C3")
-- `value`: Value to set in the cell
+### 1. Update & Save
+
+**POST** `/update-save`
+
+Updates cells in the server's template Excel file and saves the result to the server's output directory.
+
+- **Use Case:** Storing the updated file on the server for later access.
+- **Server Storage:** Yes.
+
+#### Request Body
+
+A JSON array of objects containing key (cell reference) and value.
 
 ```json
 [
-  {
-    "key": "A1",
-    "value": "Customer Name"
-  },
-  {
-    "key": "B1", 
-    "value": "John Doe"
-  },
-  {
-    "key": "A2",
-    "value": "Amount"
-  },
-  {
-    "key": "B2",
-    "value": 1500.50
-  }
+  { "key": "A1", "value": "Hello World" },
+  { "key": "B2", "value": 12345 }
 ]
 ```
 
-### Response
+#### Response (200 OK)
+
 ```json
 {
   "status": "success",
   "message": "Excel file updated successfully",
-  "requestId": "550e8400-e29b-41d4-a716-446655440000",
-  "fileName": "updated-excel-20241130-213000-550e8400-e29b-41d4-a716-446655440000.xlsm",
-  "updatedCells": 4,
-  "timestamp": "20241130-213000"
+  "requestId": "f8195c9e-7060-43c8-aeee-4ce25f2d9cde",
+  "fileName": "updated-excel-20251204-203059-f8195c9e.xlsm",
+  "updatedCells": 3,
+  "timestamp": "20251204-203059"
 }
 ```
 
-## Configuration
+### 2. Update & Download
 
-### Application Properties
-- `http.host`: HTTP listener host (default: 0.0.0.0)
-- `http.port`: HTTP listener port (default: 8081)
-- `excel.template.path`: Path to template Excel file
-- `excel.output.directory`: Directory for updated Excel files
+**POST** `/update-download`
 
-### Dependencies
-- **HTTP Connector**: For REST API endpoints
-- **File Connector**: For file operations
-- **Microsoft Excel Connector**: For Excel file manipulation
-- **APIKit Module**: For API management
+Updates cells in the server's template Excel file and returns the modified file as a direct download.
 
-## Running the Application
+- **Use Case:** Immediate retrieval without server-side storage.
+- **Server Storage:** No (In-memory processing).
 
-1. **Prerequisites**:
-   - Java 17+
-   - Maven 3.6+
-   - MuleSoft Runtime 4.10.0+
+#### Request Body
 
-2. **Build the project**:
-   ```bash
-   mvn clean compile
-   ```
+Same JSON array format as `/update-save`.
 
-3. **Run locally**:
-   ```bash
-   mvn mule:run
-   ```
+#### Response (200 OK)
 
-4. **Test the endpoint**:
-   ```bash
-   curl -X POST http://localhost:8081/update \
-     -H "Content-Type: application/json" \
-     -d '[{"key":"A1","value":"Test Value"}]'
-   ```
+- **Body:** Binary Excel file content (.xlsm).
+- **Headers:**
+  - `Content-Disposition`: Attachment with filename.
+  - `X-Updated-Cells`: Number of cells updated.
 
-## How It Works
+### 3. Upload & Update
 
-1. **Request Reception**: HTTP listener receives POST request on `/update/` endpoint
-2. **Payload Validation**: Validates that payload is an array of key-value objects
-3. **File Operations**: 
-   - Creates unique filename with timestamp and request ID
-   - Copies template Excel file to output directory with unique name
-4. **Excel Updates**: Iterates through payload and updates each specified cell
-5. **Response**: Returns success response with file details and update count
+**POST** `/upload-update`
+
+Uploads a custom Excel file, updates specified cells, and returns the modified file.
+
+- **Use Case:** Updating a user-provided Excel file rather than the server template.
+- **Content-Type:** `multipart/form-data`
+
+#### Form Data Parameters
+
+| Parameter | Type | Description |
+|:----------|:-----|:------------|
+| `excelFile` | Binary | The .xlsm file to update |
+| `cellUpdates` | String | JSON string array of cell updates |
+
+#### Example Request
+
+```bash
+curl -X POST 'http://localhost:8081/upload-update' \
+  --form 'excelFile=@"/path/to/your/file.xlsm"' \
+  --form 'cellUpdates="[{\"key\": \"A1\", \"value\": \"Hello\"}, {\"key\": \"B2\", \"value\": 123}]"' \
+  -o result.xlsm
+```
+
+---
 
 ## Error Handling
 
-The flow includes comprehensive error handling:
-- Invalid payload structure validation
-- File operation error handling
-- Excel update error handling
-- Detailed error logging with correlation IDs
+The API uses standard HTTP status codes.
 
-## Repository
+| Code | Description |
+|:-----|:------------|
+| 200  | Request was successful |
+| 500  | Internal server error (check message and error fields) |
 
-GitHub: https://github.com/savy-mulesoft/excel-update-integration
+### Error Response Schema
 
-## License
-
-This project is part of MuleSoft integration examples.
+```json
+{
+  "status": "error",
+  "message": "Failed to update Excel file",
+  "error": "Detailed error description",
+  "requestId": "unique-request-id"
+}
