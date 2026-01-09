@@ -1,0 +1,268 @@
+#%RAML 1.0
+title: Excel Update API
+version: v1
+baseUri: http://localhost:8081
+mediaType: application/json
+
+description: |
+  API for updating Excel (.xlsm) files with cell data.
+  
+  ## Available Endpoints
+  
+  | Endpoint | Input | Output | Server Storage |
+  |----------|-------|--------|----------------|
+  | `/update-save` | JSON payload | JSON response | ✅ Saves file to server |
+  | `/update-download` | JSON payload | File download | ❌ No file saved |
+  | `/upload-update` | Upload file + JSON | File download | ✅ Saves file to server |
+  
+  ## How to Save Downloaded Files
+  
+  ### Using cURL
+  ```bash
+  curl -X POST 'http://localhost:8081/upload-update' \
+    --form 'excelFile=@"/path/to/your/file.xlsm"' \
+    --form 'cellUpdates="[{\"key\": \"A1\", \"value\": \"Hello\"}]"' \
+    -o downloaded_result.xlsm
+  ```
+  
+  ### Using Postman
+  1. Send the request
+  2. Click "Save Response" button (down arrow next to Send)
+  3. Choose "Save to a file"
+  4. Save with `.xlsm` extension
+
+types:
+  CellUpdate:
+    type: object
+    properties:
+      key:
+        type: string
+        description: Excel cell reference (e.g., A1, B2, AA100)
+        example: "A1"
+      value:
+        type: string | number | boolean
+        description: Value to set in the cell
+        example: "Hello World"
+    example:
+      key: "A1"
+      value: "Hello World"
+
+  CellUpdatesArray:
+    type: array
+    items: CellUpdate
+    example:
+      - key: "A1"
+        value: "Hello World"
+      - key: "B2"
+        value: 12345
+      - key: "C3"
+        value: true
+
+  SuccessResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "success"
+      message:
+        type: string
+        example: "Excel file updated successfully"
+      requestId:
+        type: string
+        example: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+      fileName:
+        type: string
+        example: "updated-excel-20251204-203059-f8195c9e.xlsm"
+      updatedCells:
+        type: integer
+        example: 3
+      timestamp:
+        type: string
+        example: "20251204-203059"
+
+  ErrorResponse:
+    type: object
+    properties:
+      status:
+        type: string
+        example: "error"
+      message:
+        type: string
+        example: "Failed to update Excel file"
+      error:
+        type: string
+        example: "Detailed error description"
+      requestId:
+        type: string
+        example: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+
+/update-save:
+  displayName: Update & Save to Server
+  description: |
+    Updates cells in the server's template Excel file and **saves the result to the server's output directory**.
+    
+    ✅ **Use this when:** You want to store the updated file on the server for later access.
+    
+    **Input:** JSON array of cell updates  
+    **Output:** JSON response with file location  
+    **Server Storage:** Yes - file saved to output directory
+  post:
+    description: Update template Excel file and save to server
+    body:
+      application/json:
+        type: CellUpdatesArray
+        example:
+          - key: "A1"
+            value: "Hello World"
+          - key: "B2"
+            value: "Test Value"
+          - key: "C3"
+            value: 12345
+    responses:
+      200:
+        description: Excel file updated and saved successfully
+        body:
+          application/json:
+            type: SuccessResponse
+            example:
+              status: "success"
+              message: "Excel file updated successfully"
+              requestId: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+              fileName: "updated-excel-20251204-203059-f8195c9e.xlsm"
+              updatedCells: 3
+              timestamp: "20251204-203059"
+      500:
+        description: Error updating Excel file
+        body:
+          application/json:
+            type: ErrorResponse
+
+/update-download:
+  displayName: Update & Download (No Server Storage)
+  description: |
+    Updates cells in the server's template Excel file and returns the modified file as a **direct download**.
+    
+    ✅ **Use this when:** You want to get the updated file immediately without storing it on the server.
+    
+    **Input:** JSON array of cell updates  
+    **Output:** Binary file download (.xlsm)  
+    **Server Storage:** No - processed entirely in memory
+    
+    ## How to Save the Response
+    
+    **cURL:** Use `-o filename.xlsm` flag
+    ```bash
+    curl -X POST 'http://localhost:8081/update-download' \
+      -H "Content-Type: application/json" \
+      -d '[{"key":"A1","value":"Hello"},{"key":"B2","value":123}]' \
+      -o result.xlsm
+    ```
+    
+    **Postman:** Click "Save Response" → "Save to a file"
+  post:
+    description: Update template Excel file and download (no server-side file created)
+    body:
+      application/json:
+        type: CellUpdatesArray
+        example:
+          - key: "A1"
+            value: "Hello World"
+          - key: "B2"
+            value: "Test Value"
+          - key: "C3"
+            value: 12345
+    responses:
+      200:
+        description: Updated Excel file download
+        headers:
+          Content-Disposition:
+            type: string
+            description: Attachment with filename
+            example: 'attachment; filename="updated-excel-20251204-203059-uuid.xlsm"'
+          X-Request-ID:
+            type: string
+            description: Unique request identifier
+            example: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+          X-Updated-Cells:
+            type: string
+            description: Number of cells updated
+            example: "3"
+          X-Timestamp:
+            type: string
+            description: Processing timestamp
+            example: "20251204-203059"
+        body:
+          application/vnd.ms-excel.sheet.macroEnabled.12:
+            description: Binary Excel file content (.xlsm)
+      500:
+        description: Error updating Excel file
+        body:
+          application/json:
+            type: ErrorResponse
+
+/upload-update:
+  displayName: Upload, Update & Download
+  description: |
+    Upload **your own Excel file** (.xlsm), update specified cells, and download the modified file.
+    
+    ✅ **Use this when:** You have your own Excel file that you want to update (not the server template).
+    
+    **Input:** Multipart form with Excel file + JSON cell updates  
+    **Output:** Binary file download (.xlsm)  
+    **Server Storage:** Yes - file saved to output directory
+    
+    ## How to Save the Response
+    
+    **cURL:** Use `-o filename.xlsm` flag
+    ```bash
+    curl -X POST 'http://localhost:8081/upload-update' \
+      --form 'excelFile=@"your-file.xlsm"' \
+      --form 'cellUpdates="[{\"key\":\"A1\",\"value\":\"Hello\"}]"' \
+      -o result.xlsm
+    ```
+    
+    **Postman:** Click "Save Response" → "Save to a file"
+  post:
+    description: Upload Excel file, update cells, and download modified file
+    body:
+      multipart/form-data:
+        properties:
+          excelFile:
+            type: file
+            description: The Excel file (.xlsm) to update
+            required: true
+          cellUpdates:
+            type: string
+            description: |
+              JSON string containing array of cell updates.
+              Format: `[{"key": "CellRef", "value": "CellValue"}, ...]`
+            required: true
+            example: '[{"key": "A1", "value": "Hello"}, {"key": "B2", "value": 123}]'
+    responses:
+      200:
+        description: Updated Excel file download
+        headers:
+          Content-Disposition:
+            type: string
+            description: Attachment with filename
+            example: 'attachment; filename="updated-excel-20251204-203059-uuid.xlsm"'
+          X-Request-ID:
+            type: string
+            description: Unique request identifier
+            example: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+          X-Updated-Cells:
+            type: string
+            description: Number of cells updated
+            example: "3"
+          X-Timestamp:
+            type: string
+            description: Processing timestamp
+            example: "20251204-203059"
+        body:
+          application/vnd.ms-excel.sheet.macroEnabled.12:
+            description: Binary Excel file content (.xlsm)
+      500:
+        description: Error processing file
+        body:
+          application/json:
+            type: ErrorResponse

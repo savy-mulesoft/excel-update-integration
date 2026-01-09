@@ -175,6 +175,230 @@ public class ExcelUpdater {
     }
     
     /**
+     * Updates Excel file with key-value pairs using an uploaded file as input
+     * 
+     * @param uploadedFileBytes Byte array of the uploaded Excel file
+     * @param outputPath Path where the updated Excel file should be saved
+     * @param cellUpdates Map of cell addresses to values
+     * @return Number of cells updated
+     * @throws IOException If file operations fail
+     */
+    public static int updateExcelCellsFromUpload(byte[] uploadedFileBytes, String outputPath, Map<String, Object> cellUpdates) throws IOException {
+        System.out.println("Starting Excel update from uploaded file to output: " + outputPath);
+        
+        // Resolve output path - ensure it's in the project structure
+        java.io.File outputFile = new java.io.File(outputPath);
+        if (!outputFile.isAbsolute()) {
+            // For relative paths, resolve them relative to the project root
+            String projectRoot = System.getProperty("user.dir");
+            // If we're running from the runtime directory, find the actual project
+            if (projectRoot.contains("mule-enterprise-standalone")) {
+                // We're in the Mule runtime, need to find the actual project directory
+                String actualProjectPath = "/Users/sarvarth.bhatnagar/acb/rbc_excel/excel-update-integration";
+                outputFile = new java.io.File(actualProjectPath, outputPath);
+            } else {
+                // We're in the project directory
+                outputFile = new java.io.File(projectRoot, outputPath);
+            }
+        }
+        String resolvedOutputPath = outputFile.getAbsolutePath();
+        System.out.println("Resolved output path: " + resolvedOutputPath);
+        
+        // Create output directory if it doesn't exist
+        java.io.File outputDir = outputFile.getParentFile();
+        if (outputDir != null && !outputDir.exists()) {
+            outputDir.mkdirs();
+            System.out.println("Created output directory: " + outputDir.getAbsolutePath());
+        }
+        
+        // Write uploaded file to output location first
+        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(resolvedOutputPath)) {
+            fos.write(uploadedFileBytes);
+        }
+        System.out.println("Uploaded file saved to: " + resolvedOutputPath);
+        
+        int updatedCount = 0;
+        
+        try (FileInputStream fis = new FileInputStream(resolvedOutputPath);
+             Workbook workbook = new XSSFWorkbook(fis)) {
+            
+            // Get the first sheet (Sheet1)
+            Sheet sheet = workbook.getSheetAt(0);
+            if (sheet == null) {
+                throw new IllegalArgumentException("No sheets found in the Excel file");
+            }
+            
+            System.out.println("Working with sheet: " + sheet.getSheetName());
+            
+            // Update each cell
+            for (Map.Entry<String, Object> entry : cellUpdates.entrySet()) {
+                String cellAddress = entry.getKey();
+                Object cellValue = entry.getValue();
+                
+                try {
+                    // Parse cell address (e.g., "A1" -> row=0, col=0)
+                    CellReference cellRef = new CellReference(cellAddress);
+                    int rowIndex = cellRef.getRow();
+                    int colIndex = cellRef.getCol();
+                    
+                    // Get or create row
+                    Row row = sheet.getRow(rowIndex);
+                    if (row == null) {
+                        row = sheet.createRow(rowIndex);
+                    }
+                    
+                    // Get or create cell
+                    Cell cell = row.getCell(colIndex);
+                    if (cell == null) {
+                        cell = row.createCell(colIndex);
+                    }
+                    
+                    // Set cell value based on type
+                    setCellValue(cell, cellValue);
+                    
+                    System.out.println("Updated cell " + cellAddress + " with value: " + cellValue);
+                    updatedCount++;
+                    
+                } catch (Exception e) {
+                    System.err.println("Failed to update cell " + cellAddress + ": " + e.getMessage());
+                    throw new RuntimeException("Failed to update cell " + cellAddress, e);
+                }
+            }
+            
+            // Save the workbook back to file
+            try (FileOutputStream fos = new FileOutputStream(resolvedOutputPath)) {
+                workbook.write(fos);
+            }
+            
+            System.out.println("Successfully updated " + updatedCount + " cells in uploaded file: " + resolvedOutputPath);
+            
+        } catch (IOException e) {
+            System.err.println("IO error while updating Excel file " + resolvedOutputPath + ": " + e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            System.err.println("Unexpected error while updating Excel file " + resolvedOutputPath + ": " + e.getMessage());
+            throw new RuntimeException("Failed to update Excel file", e);
+        }
+        
+        return updatedCount;
+    }
+    
+    /**
+     * Updates Excel template file in memory and returns the modified file as byte array.
+     * Does NOT save any file to disk.
+     * 
+     * @param templatePath Path to the template Excel file
+     * @param cellUpdates Map of cell addresses to values
+     * @return Byte array of the updated Excel file
+     * @throws IOException If file operations fail
+     */
+    public static byte[] updateExcelCellsInMemory(String templatePath, Map<String, Object> cellUpdates) throws IOException {
+        System.out.println("Starting in-memory Excel update from template: " + templatePath);
+        
+        // Resolve template path - check if it's a classpath resource or absolute path
+        java.io.InputStream templateInputStream = null;
+        java.io.File templateFile = new java.io.File(templatePath);
+        
+        if (templateFile.exists()) {
+            // Template exists as file path
+            templateInputStream = new java.io.FileInputStream(templateFile);
+            System.out.println("Using template file from filesystem: " + templateFile.getAbsolutePath());
+        } else {
+            // Try to load from classpath
+            String resourcePath = templatePath.startsWith("src/main/resources/") ? 
+                templatePath.substring("src/main/resources/".length()) : templatePath;
+            templateInputStream = ExcelUpdater.class.getClassLoader().getResourceAsStream(resourcePath);
+            if (templateInputStream == null) {
+                // Try with absolute path resolution for Mule runtime
+                String projectRoot = System.getProperty("user.dir");
+                if (projectRoot.contains("mule-enterprise-standalone")) {
+                    String actualProjectPath = "/Users/sarvarth.bhatnagar/acb/rbc_excel/excel-update-integration";
+                    java.io.File resolvedFile = new java.io.File(actualProjectPath, templatePath);
+                    if (resolvedFile.exists()) {
+                        templateInputStream = new java.io.FileInputStream(resolvedFile);
+                        System.out.println("Using template file from resolved path: " + resolvedFile.getAbsolutePath());
+                    }
+                }
+                if (templateInputStream == null) {
+                    throw new java.io.FileNotFoundException("Template file not found: " + templatePath + " (also tried as classpath resource: " + resourcePath + ")");
+                }
+            } else {
+                System.out.println("Using template file from classpath: " + resourcePath);
+            }
+        }
+        
+        int updatedCount = 0;
+        byte[] resultBytes;
+        
+        try (Workbook workbook = new XSSFWorkbook(templateInputStream)) {
+            
+            // Get the first sheet (Sheet1)
+            Sheet sheet = workbook.getSheetAt(0);
+            if (sheet == null) {
+                throw new IllegalArgumentException("No sheets found in the Excel file");
+            }
+            
+            System.out.println("Working with sheet: " + sheet.getSheetName());
+            
+            // Update each cell
+            for (Map.Entry<String, Object> entry : cellUpdates.entrySet()) {
+                String cellAddress = entry.getKey();
+                Object cellValue = entry.getValue();
+                
+                try {
+                    // Parse cell address (e.g., "A1" -> row=0, col=0)
+                    CellReference cellRef = new CellReference(cellAddress);
+                    int rowIndex = cellRef.getRow();
+                    int colIndex = cellRef.getCol();
+                    
+                    // Get or create row
+                    Row row = sheet.getRow(rowIndex);
+                    if (row == null) {
+                        row = sheet.createRow(rowIndex);
+                    }
+                    
+                    // Get or create cell
+                    Cell cell = row.getCell(colIndex);
+                    if (cell == null) {
+                        cell = row.createCell(colIndex);
+                    }
+                    
+                    // Set cell value based on type
+                    setCellValue(cell, cellValue);
+                    
+                    System.out.println("Updated cell " + cellAddress + " with value: " + cellValue);
+                    updatedCount++;
+                    
+                } catch (Exception e) {
+                    System.err.println("Failed to update cell " + cellAddress + ": " + e.getMessage());
+                    throw new RuntimeException("Failed to update cell " + cellAddress, e);
+                }
+            }
+            
+            // Write workbook to byte array (in memory, no file saved)
+            try (java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+                workbook.write(baos);
+                resultBytes = baos.toByteArray();
+            }
+            
+            System.out.println("Successfully updated " + updatedCount + " cells in memory. Result size: " + resultBytes.length + " bytes");
+            
+        } catch (IOException e) {
+            System.err.println("IO error while updating Excel in memory: " + e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            System.err.println("Unexpected error while updating Excel in memory: " + e.getMessage());
+            throw new RuntimeException("Failed to update Excel file in memory", e);
+        } finally {
+            if (templateInputStream != null) {
+                templateInputStream.close();
+            }
+        }
+        
+        return resultBytes;
+    }
+    
+    /**
      * Validates if a cell address is in correct format (e.g., A1, B2, etc.)
      */
     public static boolean isValidCellAddress(String cellAddress) {

@@ -26,7 +26,7 @@ The RBC Excel API is a RESTful service designed to facilitate the modification o
 
 | Environment | URL |
 |:------------|:----|
-| **Development** | `https://rbc-excel-proxy-app-fomag7.5sc6y6-1.usa-e2.cloudhub.io` |
+| **Development** | 
 | **Local** | `http://localhost:8081` |
 
 ---

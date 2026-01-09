@@ -19,7 +19,7 @@
     
     <!-- Main Flow -->
     <flow name="excel-update-flow" doc:id="excel-update-flow">
-        <http:listener config-ref="HTTP_Listener_config" path="/update" doc:name="HTTP Listener" doc:id="http-listener" allowedMethods="POST"/>
+        <http:listener config-ref="HTTP_Listener_config" path="/update-save" doc:name="HTTP Listener" doc:id="http-listener" allowedMethods="POST"/>
         
         <!-- Store original payload before transformation -->
         <set-variable variableName="originalPayload" value="#[payload]" doc:name="Store Original Payload" doc:id="store-original-payload"/>
@@ -85,6 +85,225 @@ output application/json
             <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="on-error-propagate" type="ANY">
                 <logger message="Error processing Excel update: #[error.description]" level="ERROR" doc:name="Log Error" doc:id="log-error"/>
                 <ee:transform doc:name="Error Response" doc:id="error-response">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: "error",
+    message: "Failed to update Excel file",
+    error: error.description,
+    requestId: vars.requestId default "unknown"
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    
+    <!-- File Upload Flow -->
+    <flow name="excel-file-update-flow" doc:id="excel-file-update-flow">
+        <http:listener config-ref="HTTP_Listener_config" path="/upload-update" doc:name="HTTP Listener" doc:id="http-listener-file-update" allowedMethods="POST">
+            <http:response>
+                <http:headers><![CDATA[#[vars.responseHeaders default {}]]]></http:headers>
+            </http:response>
+        </http:listener>
+        
+        <!-- Generate unique request ID -->
+        <set-variable variableName="requestId" value="#[uuid()]" doc:name="Generate Request ID" doc:id="generate-request-id-file"/>
+        <set-variable variableName="timestamp" value="#[now() as String {format: 'yyyyMMdd-HHmmss'}]" doc:name="Generate Timestamp" doc:id="generate-timestamp-file"/>
+        <set-variable variableName="uniqueFileName" value="#['updated-excel-' ++ vars.timestamp ++ '-' ++ vars.requestId ++ '.xlsm']" doc:name="Generate Unique Filename" doc:id="generate-unique-filename-file"/>
+        
+        <logger message="Processing Excel file update request. Request ID: #[vars.requestId]" level="INFO" doc:name="Log Request" doc:id="log-request-file"/>
+        
+        <!-- Debug: Log the incoming payload structure -->
+        <logger message="Incoming multipart payload keys: #[keysOf(payload.parts)]" level="INFO" doc:name="Log Payload Keys" doc:id="log-payload-keys"/>
+        
+        <!-- Extract multipart data with error handling -->
+        <ee:transform doc:name="Extract Multipart Data" doc:id="extract-multipart-data">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+    excelFileBytes: payload.parts.excelFile.content,
+    cellUpdatesString: payload.parts.cellUpdates.content as String
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        
+        <!-- Store extracted data in variables -->
+        <set-variable variableName="excelFileBytes" value="#[payload.excelFileBytes]" doc:name="Store Excel File Bytes" doc:id="store-excel-file-bytes"/>
+        <set-variable variableName="cellUpdatesJson" value="#[payload.cellUpdatesString]" doc:name="Store Cell Updates JSON" doc:id="store-cell-updates-json"/>
+        
+        <!-- Debug: Log extracted values -->
+        <logger message="Excel file size: #[sizeOf(vars.excelFileBytes) default 'null'], Cell updates string: #[vars.cellUpdatesJson]" level="INFO" doc:name="Log Extracted Values" doc:id="log-extracted-values"/>
+        
+        <!-- Parse and validate cell updates JSON -->
+        <ee:transform doc:name="Parse Cell Updates" doc:id="parse-cell-updates">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+import * from dw::util::Values
+---
+if (vars.cellUpdatesJson is String)
+    read(vars.cellUpdatesJson, "application/json")
+else if (vars.cellUpdatesJson is Array)
+    vars.cellUpdatesJson
+else
+    error("cellUpdates must be a JSON array of key-value objects")]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        
+        <!-- Validate payload structure -->
+        <ee:transform doc:name="Validate Cell Updates Structure" doc:id="validate-cell-updates-structure">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+if (payload is Array)
+    payload filter ($ != null and $.key != null and $.value != null)
+else
+    error("Cell updates must be an array of key-value objects")]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        
+        <!-- Convert payload to Map for Java method -->
+        <ee:transform doc:name="Convert to Map" doc:id="convert-to-map-file">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+payload reduce (item, acc = {}) -> acc ++ { (item.key): item.value }]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        
+        <!-- Call Java method to update Excel cells from uploaded file -->
+        <logger message="Calling ExcelUpdater.updateExcelCellsFromUpload with output: #['${excel.output.directory}' ++ vars.uniqueFileName]" level="INFO" doc:name="Log Java Call" doc:id="log-java-call-file"/>
+        
+        <set-variable variableName="updatedCellsCount" value="#[java!com::mulesoft::excel::ExcelUpdater::updateExcelCellsFromUpload(vars.excelFileBytes, '${excel.output.directory}' ++ vars.uniqueFileName, payload)]" doc:name="Update Excel Cells From Upload" doc:id="update-excel-cells-from-upload"/>
+        
+        <logger message="Successfully updated #[vars.updatedCellsCount] cells in uploaded Excel file: #[vars.uniqueFileName]" level="INFO" doc:name="Log Success Update" doc:id="log-success-update-file"/>
+        
+        <!-- Read the generated file -->
+        <ee:transform doc:name="Read Generated File" doc:id="read-generated-file">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/octet-stream
+---
+readUrl("file:///Users/sarvarth.bhatnagar/acb/rbc_excel/excel-update-integration/src/main/resources/output/" ++ vars.uniqueFileName, "application/octet-stream")]]></ee:set-payload>
+            </ee:message>
+            <ee:variables>
+                <ee:set-variable variableName="responseHeaders"><![CDATA[%dw 2.0
+output application/java
+---
+{
+    "Content-Type": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "Content-Disposition": "attachment; filename=\"" ++ vars.uniqueFileName ++ "\"",
+    "X-Request-ID": vars.requestId,
+    "X-Updated-Cells": vars.updatedCellsCount as String,
+    "X-Timestamp": vars.timestamp
+}]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+        
+        <logger message="Excel file update completed successfully. File: #[vars.uniqueFileName] returned as download" level="INFO" doc:name="Log Success" doc:id="log-success-file"/>
+        
+        <!-- Error Handling -->
+        <error-handler>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="on-error-propagate-file" type="ANY">
+                <logger message="Error processing Excel file update: #[error.description]" level="ERROR" doc:name="Log Error" doc:id="log-error-file"/>
+                <ee:transform doc:name="Error Response" doc:id="error-response-file">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    status: "error",
+    message: "Failed to update uploaded Excel file",
+    error: error.description,
+    requestId: vars.requestId default "unknown"
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    
+    <!-- Update and Share Flow - Uses template, returns file download, NO file saved to disk -->
+    <flow name="excel-update-share-flow" doc:id="excel-update-share-flow">
+        <http:listener config-ref="HTTP_Listener_config" path="/update-download" doc:name="HTTP Listener" doc:id="http-listener-update-share" allowedMethods="POST">
+            <http:response>
+                <http:headers><![CDATA[#[vars.responseHeaders default {}]]]></http:headers>
+            </http:response>
+        </http:listener>
+        
+        <!-- Store original payload before transformation -->
+        <set-variable variableName="originalPayload" value="#[payload]" doc:name="Store Original Payload" doc:id="store-original-payload-share"/>
+        
+        <!-- Generate unique request ID -->
+        <set-variable variableName="requestId" value="#[uuid()]" doc:name="Generate Request ID" doc:id="generate-request-id-share"/>
+        <set-variable variableName="timestamp" value="#[now() as String {format: 'yyyyMMdd-HHmmss'}]" doc:name="Generate Timestamp" doc:id="generate-timestamp-share"/>
+        <set-variable variableName="uniqueFileName" value="#['updated-excel-' ++ vars.timestamp ++ '-' ++ vars.requestId ++ '.xlsm']" doc:name="Generate Unique Filename" doc:id="generate-unique-filename-share"/>
+        
+        <logger message="Processing Excel update-share request. Request ID: #[vars.requestId], Payload: #[payload]" level="INFO" doc:name="Log Request" doc:id="log-request-share"/>
+        
+        <!-- Validate payload structure -->
+        <ee:transform doc:name="Validate and Transform Payload" doc:id="validate-transform-payload-share">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+if (payload is Array)
+    payload filter ($ != null and $.key != null and $.value != null)
+else
+    error("Payload must be an array of key-value objects")]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        
+        <!-- Convert payload to Map for Java method -->
+        <ee:transform doc:name="Convert to Map" doc:id="convert-to-map-share">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.originalPayload reduce (item, acc = {}) -> acc ++ { (item.key): item.value }]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        
+        <!-- Call Java method to update Excel cells in memory (no file saved) -->
+        <logger message="Calling ExcelUpdater.updateExcelCellsInMemory with template: ${excel.template.path}" level="INFO" doc:name="Log Java Call" doc:id="log-java-call-share"/>
+        
+        <set-variable variableName="updatedCellsCount" value="#[sizeOf(vars.originalPayload)]" doc:name="Store Updated Cells Count" doc:id="store-updated-cells-count"/>
+        
+        <ee:transform doc:name="Update Excel In Memory and Set Response" doc:id="update-excel-in-memory">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/octet-stream
+---
+java!com::mulesoft::excel::ExcelUpdater::updateExcelCellsInMemory("${excel.template.path}", payload)]]></ee:set-payload>
+            </ee:message>
+            <ee:variables>
+                <ee:set-variable variableName="responseHeaders"><![CDATA[%dw 2.0
+output application/java
+---
+{
+    "Content-Type": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "Content-Disposition": "attachment; filename=\"" ++ vars.uniqueFileName ++ "\"",
+    "X-Request-ID": vars.requestId,
+    "X-Updated-Cells": vars.updatedCellsCount as String,
+    "X-Timestamp": vars.timestamp
+}]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+        
+        <logger message="Excel update-share completed successfully. File returned as download (no file saved to disk)" level="INFO" doc:name="Log Success" doc:id="log-success-share"/>
+        
+        <!-- Error Handling -->
+        <error-handler>
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="on-error-propagate-share" type="ANY">
+                <logger message="Error processing Excel update-share: #[error.description]" level="ERROR" doc:name="Log Error" doc:id="log-error-share"/>
+                <ee:transform doc:name="Error Response" doc:id="error-response-share">
                     <ee:message>
                         <ee:set-payload><![CDATA[%dw 2.0
 output application/json

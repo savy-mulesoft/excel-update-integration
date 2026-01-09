@@ -1,0 +1,358 @@
+openapi: 3.0.3
+info:
+  title: Excel Update API
+  description: |
+    API for updating Excel (.xlsm) files with cell data.
+    
+    ## Available Endpoints
+    
+    | Endpoint | Input | Output | Server Storage |
+    |----------|-------|--------|----------------|
+    | `/update-save` | JSON payload | JSON response | ✅ Saves file to server |
+    | `/update-download` | JSON payload | File download | ❌ No file saved |
+    | `/upload-update` | Upload file + JSON | File download | ✅ Saves file to server |
+    
+    ## How to Save Downloaded Files
+    
+    ### Using cURL
+    ```bash
+    curl -X POST 'http://localhost:8081/upload-update' \
+      --form 'excelFile=@"/path/to/your/file.xlsm"' \
+      --form 'cellUpdates="[{\"key\": \"A1\", \"value\": \"Hello\"}]"' \
+      -o downloaded_result.xlsm
+    ```
+    
+    ### Using Postman
+    1. Send the request
+    2. Click "Save Response" button (down arrow next to Send)
+    3. Choose "Save to a file"
+    4. Save with `.xlsm` extension
+    
+    ### Using JavaScript/Fetch
+    ```javascript
+    const formData = new FormData();
+    formData.append('excelFile', fileInput.files[0]);
+    formData.append('cellUpdates', JSON.stringify([{key: 'A1', value: 'Hello'}]));
+    
+    const response = await fetch('http://localhost:8081/upload-update', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'updated-excel.xlsm';
+    a.click();
+    ```
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:8081
+    description: Local Development Server
+
+tags:
+  - name: Excel Operations
+    description: Operations for updating Excel files
+
+paths:
+  /update-save:
+    post:
+      tags:
+        - Excel Operations
+      summary: Update template & save to server (JSON response)
+      description: |
+        Updates cells in the server's template Excel file and **saves the result to the server's output directory**.
+        
+        ✅ **Use this when:** You want to store the updated file on the server for later access.
+        
+        **Input:** JSON array of cell updates  
+        **Output:** JSON response with file location  
+        **Server Storage:** Yes - file saved to output directory
+      operationId: updateAndSave
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CellUpdatesArray'
+            examples:
+              basic:
+                summary: Basic cell updates
+                value:
+                  - key: "A1"
+                    value: "Hello World"
+                  - key: "B2"
+                    value: "Test Value"
+                  - key: "C3"
+                    value: 12345
+              multiple_types:
+                summary: Multiple data types
+                value:
+                  - key: "A1"
+                    value: "Text Value"
+                  - key: "B1"
+                    value: 99.99
+                  - key: "C1"
+                    value: true
+      responses:
+        '200':
+          description: Excel file updated and saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+              example:
+                status: "success"
+                message: "Excel file updated successfully"
+                requestId: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+                fileName: "updated-excel-20251204-203059-f8195c9e.xlsm"
+                updatedCells: 3
+                timestamp: "20251204-203059"
+        '500':
+          description: Error updating Excel file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /update-download:
+    post:
+      tags:
+        - Excel Operations
+      summary: Update template & download (no server storage)
+      description: |
+        Updates cells in the server's template Excel file and returns the modified file as a **direct download**.
+        
+        ✅ **Use this when:** You want to get the updated file immediately without storing it on the server.
+        
+        **Input:** JSON array of cell updates  
+        **Output:** Binary file download (.xlsm)  
+        **Server Storage:** No - processed entirely in memory
+        
+        ### How to Save the Response:
+        
+        **cURL:** Use `-o filename.xlsm` flag
+        ```bash
+        curl -X POST 'http://localhost:8081/update-download' \
+          -H "Content-Type: application/json" \
+          -d '[{"key":"A1","value":"Hello"},{"key":"B2","value":123}]' \
+          -o result.xlsm
+        ```
+        
+        **Postman:** Click "Save Response" → "Save to a file"
+      operationId: updateAndDownload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CellUpdatesArray'
+            examples:
+              basic:
+                summary: Basic cell updates
+                value:
+                  - key: "A1"
+                    value: "Hello World"
+                  - key: "B2"
+                    value: "Test Value"
+                  - key: "C3"
+                    value: 12345
+      responses:
+        '200':
+          description: Updated Excel file download
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Attachment with filename
+              example: 'attachment; filename="updated-excel-20251204-203059-uuid.xlsm"'
+            X-Request-ID:
+              schema:
+                type: string
+              description: Unique request identifier
+              example: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+            X-Updated-Cells:
+              schema:
+                type: string
+              description: Number of cells updated
+              example: "3"
+            X-Timestamp:
+              schema:
+                type: string
+              description: Processing timestamp
+              example: "20251204-203059"
+          content:
+            application/vnd.ms-excel.sheet.macroEnabled.12:
+              schema:
+                type: string
+                format: binary
+              example: (Binary Excel file content)
+        '500':
+          description: Error updating Excel file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /upload-update:
+    post:
+      tags:
+        - Excel Operations
+      summary: Upload your file, update & download
+      description: |
+        Upload **your own Excel file** (.xlsm), update specified cells, and download the modified file.
+        
+        ✅ **Use this when:** You have your own Excel file that you want to update (not the server template).
+        
+        **Input:** Multipart form with Excel file + JSON cell updates  
+        **Output:** Binary file download (.xlsm)  
+        **Server Storage:** Yes - file saved to output directory
+        
+        ### How to Save the Response:
+        
+        **cURL:** Use `-o filename.xlsm` flag
+        ```bash
+        curl -X POST 'http://localhost:8081/upload-update' \
+          --form 'excelFile=@"your-file.xlsm"' \
+          --form 'cellUpdates="[{\"key\":\"A1\",\"value\":\"Hello\"}]"' \
+          -o result.xlsm
+        ```
+        
+        **Postman:** Click "Save Response" → "Save to a file"
+        
+        **Browser/JavaScript:** Convert response to blob and trigger download
+      operationId: uploadAndUpdate
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - excelFile
+                - cellUpdates
+              properties:
+                excelFile:
+                  type: string
+                  format: binary
+                  description: The Excel file (.xlsm) to update
+                cellUpdates:
+                  type: string
+                  description: |
+                    JSON string containing array of cell updates.
+                    Format: `[{"key": "CellRef", "value": "CellValue"}, ...]`
+                  example: '[{"key": "A1", "value": "Hello"}, {"key": "B2", "value": 123}]'
+            encoding:
+              excelFile:
+                contentType: application/vnd.ms-excel.sheet.macroEnabled.12
+              cellUpdates:
+                contentType: text/plain
+      responses:
+        '200':
+          description: Updated Excel file download
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Attachment with filename
+              example: 'attachment; filename="updated-excel-20251204-203059-uuid.xlsm"'
+            X-Request-ID:
+              schema:
+                type: string
+              description: Unique request identifier
+              example: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+            X-Updated-Cells:
+              schema:
+                type: string
+              description: Number of cells updated
+              example: "3"
+            X-Timestamp:
+              schema:
+                type: string
+              description: Processing timestamp
+              example: "20251204-203059"
+          content:
+            application/vnd.ms-excel.sheet.macroEnabled.12:
+              schema:
+                type: string
+                format: binary
+              example: (Binary Excel file content)
+        '500':
+          description: Error processing file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    CellUpdate:
+      type: object
+      required:
+        - key
+        - value
+      properties:
+        key:
+          type: string
+          description: Excel cell reference (e.g., A1, B2, AA100)
+          example: "A1"
+        value:
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+          description: Value to set in the cell (string, number, or boolean)
+          example: "Hello World"
+    
+    CellUpdatesArray:
+      type: array
+      items:
+        $ref: '#/components/schemas/CellUpdate'
+      example:
+        - key: "A1"
+          value: "Hello World"
+        - key: "B2"
+          value: 12345
+    
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "success"
+        message:
+          type: string
+          example: "Excel file updated successfully"
+        requestId:
+          type: string
+          format: uuid
+          example: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
+        fileName:
+          type: string
+          example: "updated-excel-20251204-203059-f8195c9e.xlsm"
+        updatedCells:
+          type: integer
+          example: 3
+        timestamp:
+          type: string
+          example: "20251204-203059"
+    
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "error"
+        message:
+          type: string
+          example: "Failed to update Excel file"
+        error:
+          type: string
+          example: "Detailed error description"
+        requestId:
+          type: string
+          example: "f8195c9e-7060-43c8-aeee-4ce25f2d9cde"
