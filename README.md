@@ -1,4 +1,4 @@
-# RBC Excel API Documentation
+# Excel API Documentation
 
 > ⚠️ **Disclaimer**
 >
@@ -11,7 +11,7 @@
 
 ## Overview
 
-The RBC Excel API is a RESTful service designed to facilitate the modification of Excel files (`.xlsm` format). It allows users to update specific cells in an Excel file with new data, either by using a server-side template or by uploading their own Excel file.
+The Excel API is a RESTful service designed to facilitate the modification of Excel files (`.xlsm` format). It allows users to update specific cells in an Excel file with new data, either by using a server-side template or by uploading their own Excel file.
 
 ### Key Features
 
@@ -36,7 +36,7 @@ The RBC Excel API is a RESTful service designed to facilitate the modification o
 To test the API immediately using the development environment, run the following cURL command to update a file and download the result:
 
 ```bash
-curl --location 'https://rbc-excel-proxy-app-fomag7.5sc6y6-1.usa-e2.cloudhub.io/update-download' \
+curl --location 'http://localhost:8081/update-download' \
 --header 'Content-Type: application/json' \
 --data '[
     {

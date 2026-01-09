@@ -57,8 +57,8 @@ public class ExcelUpdater {
             String projectRoot = System.getProperty("user.dir");
             // If we're running from the runtime directory, find the actual project
             if (projectRoot.contains("mule-enterprise-standalone")) {
-                // We're in the Mule runtime, need to find the actual project directory
-                String actualProjectPath = "/Users/sarvarth.bhatnagar/acb/rbc_excel/excel-update-integration";
+                // We're in the Mule runtime, try to find the project directory
+                String actualProjectPath = System.getProperty("mule.project.path", ".");
                 outputFile = new java.io.File(actualProjectPath, outputPath);
             } else {
                 // We're in the project directory
@@ -193,8 +193,8 @@ public class ExcelUpdater {
             String projectRoot = System.getProperty("user.dir");
             // If we're running from the runtime directory, find the actual project
             if (projectRoot.contains("mule-enterprise-standalone")) {
-                // We're in the Mule runtime, need to find the actual project directory
-                String actualProjectPath = "/Users/sarvarth.bhatnagar/acb/rbc_excel/excel-update-integration";
+                // We're in the Mule runtime, try to find the project directory
+                String actualProjectPath = System.getProperty("mule.project.path", ".");
                 outputFile = new java.io.File(actualProjectPath, outputPath);
             } else {
                 // We're in the project directory
@@ -312,7 +312,7 @@ public class ExcelUpdater {
                 // Try with absolute path resolution for Mule runtime
                 String projectRoot = System.getProperty("user.dir");
                 if (projectRoot.contains("mule-enterprise-standalone")) {
-                    String actualProjectPath = "/Users/sarvarth.bhatnagar/acb/rbc_excel/excel-update-integration";
+                    String actualProjectPath = System.getProperty("mule.project.path", ".");
                     java.io.File resolvedFile = new java.io.File(actualProjectPath, templatePath);
                     if (resolvedFile.exists()) {
                         templateInputStream = new java.io.FileInputStream(resolvedFile);

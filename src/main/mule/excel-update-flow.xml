@@ -191,7 +191,7 @@ payload reduce (item, acc = {}) -> acc ++ { (item.key): item.value }]]></ee:set-
                 <ee:set-payload><![CDATA[%dw 2.0
 output application/octet-stream
 ---
-readUrl("file:///Users/sarvarth.bhatnagar/acb/rbc_excel/excel-update-integration/src/main/resources/output/" ++ vars.uniqueFileName, "application/octet-stream")]]></ee:set-payload>
+readUrl("file://" ++ "${excel.output.directory}" ++ vars.uniqueFileName, "application/octet-stream")]]></ee:set-payload>
             </ee:message>
             <ee:variables>
                 <ee:set-variable variableName="responseHeaders"><![CDATA[%dw 2.0
